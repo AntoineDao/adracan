@@ -27,6 +27,20 @@ var (
 	defaultConfigFlags = genericclioptions.NewConfigFlags(true).WithDeprecatedPasswordFlag().WithDiscoveryBurst(300).WithDiscoveryQPS(50.0)
 )
 
+func fetchNamespace() (string, error) {
+
+	if Namespace != "" {
+		return Namespace, nil
+	}
+
+	mainClient := getClientFactory(&From)
+	Namespace, _, err := mainClient.ToRawKubeConfigLoader().Namespace()
+	if err != nil {
+		return Namespace, fmt.Errorf("Failed to fetch namespace from kubeconfig: %s", err)
+	}
+	return Namespace, nil
+}
+
 // contextCmd represents the context command
 var contextCmd = &cobra.Command{
 	Use:   "context --from CTX_1 --to CTX_2 TYPE NAME",
@@ -39,11 +53,18 @@ var contextCmd = &cobra.Command{
 
 		objects := make([]runtime.Object, 2)
 
+		namespace, err := fetchNamespace()
+
+		if err != nil {
+			fmt.Print(err)
+			return
+		}
+
 		for i, ctx := range []string{From, To} {
 			fmt.Printf("Fetching object for context: %s", ctx)
 			fmt.Println()
 			c := getClientFactory(&ctx)
-			o, err := getObject(c, args...)
+			o, err := getObject(c, namespace, args...)
 			if err != nil {
 				fmt.Printf("Failed to fetch in \"%s\": %s", ctx, err)
 				return
@@ -77,12 +98,12 @@ func getClientFactory(context *string) cmdutil.Factory {
 	return cmdutil.NewFactory(matchVersionKubeConfigFlags)
 }
 
-func getObject(clientFrom cmdutil.Factory, args ...string) (runtime.Object, error) {
+func getObject(clientFrom cmdutil.Factory, namespace string, args ...string) (runtime.Object, error) {
 	fn := resource.FilenameOptions{}
 
 	r := clientFrom.NewBuilder().
 		Unstructured().
-		NamespaceParam(Namespace).DefaultNamespace().AllNamespaces(false).
+		NamespaceParam(namespace).DefaultNamespace().AllNamespaces(false).
 		FilenameParam(false, &fn).
 		LabelSelectorParam("").
 		FieldSelectorParam("").
